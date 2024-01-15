@@ -1,0 +1,114 @@
+<script total>
+
+	exports.id = 'mysql';
+	exports.name = 'MySQL';
+	exports.group = 'Databases';
+	exports.icon = 'ti ti-database';
+	exports.author = 'Total.js';
+	exports.version = '2';
+	exports.config = {};
+	exports.inputs = [{ id: 'input', name: 'Input' }];
+	exports.outputs = [{ id: 'output', name: 'Output' }];
+	exports.npm = ['mysql2'];
+	exports.POOLS = {};
+
+	exports.make = function(instance, config) {
+
+		const mysql = require('mysql2');
+
+		var MYSQL;
+
+		instance.message = function($) {
+			var data = $.data;
+
+			if (!MYSQL || !MYSQL.pool)
+				return $.send('output', { error: 'MySQL connection not configured' });
+
+			MYSQL.pool.query(data.query, function(err, rows, fields) {
+				if (err)
+					return $.send('output', { error: err.message });
+
+				$.send('output', { rows });
+			})
+		};
+
+		instance.close = function(callback) {
+			if (MYSQL) {
+				MYSQL.count--;
+				if (MYSQL.count === 0) {// last component using this connection so destroy it
+					MYSQL.pool.end();
+					delete exports.POOLS[config.connection];
+				}
+				MYSQL = null;
+			}
+		};
+
+		instance.configure = function() {
+
+			// same connection, ignore
+			if (!config.connection || (MYSQL && MYSQL.string === config.connection))
+				return;
+
+			instance.close();
+
+			// already existing connection, use it
+			if (exports.POOLS[config.connection]) {
+				MYSQL = exports.POOLS[config.connection];
+				MYSQL.count++;
+				return;
+			}
+
+			var pool = mysql.createPool(config.connection);
+			MYSQL = exports.POOLS[config.connection] = {
+				pool,
+				count: 1,
+				string: config.connection
+			};
+
+			pool.query('SELECT NOW() AS message;', (err, response) => {
+				if (err)
+					instance.throw(err.message);
+			});
+		};
+
+		instance.configure();
+
+	};
+
+</script>
+
+<readme>
+## Input
+
+Expected data:
+
+```javascript
+{
+	query: 'SELECT * FROM tblname;'
+}
+```
+</readme>
+
+<settings>
+	<div class="padding">
+		<div class="row m">
+			<div class="col-md-12">
+				<ui-component name="input" path="?.connection" config="required:1">Connection string</ui-component>
+				<div class="help">e.g.: mysql://user:password@localhost:3306/dbname</div>
+			</div>
+		</div>
+	</div>
+</settings>
+
+<style>
+	.CLASS footer { padding: 10px; font-size: 12px; }
+</style>
+
+<body>
+	<header>
+		<i class="ICON"></i>NAME
+	</header>
+	<footer>
+		<ui-bind path="STATUS.error" config="text" class="red"></ui-bind>
+	</footer>
+</body>

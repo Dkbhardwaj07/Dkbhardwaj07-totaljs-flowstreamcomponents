@@ -1,0 +1,582 @@
+<script total>
+
+	exports.id = 'dataset';
+	exports.name = 'CSV Dataset';
+	exports.group = 'Dashboard';
+	exports.version = '2';
+	exports.icon = 'ti ti-database';
+	exports.author = 'Peter Širka';
+	exports.config = { name: '', unit: '', icon: '', color: '', decimals: 2, type: 'daily', sum: 0, hours: 48, days: 12, months: 12, years: 6 };
+	exports.inputs = [{ id: 'input', name: 'Value' }, { id: 'live', name: 'Live stats' }, { id: 'stats', name: 'Stats' }];
+	exports.outputs = [{ id: 'stats', name: 'Output' }];
+
+	exports.make = function(instance, config) {
+
+		var uid = instance.id;
+		var filename_meta = PATH.private('dataset_' + uid + '.json');
+		var filename_data = PATH.private('dataset_' + uid + '.csv');
+		var meta = {};
+
+		var updatestatus = function() {
+			instance.status({ id: uid, keys: meta.keys });
+		};
+
+		F.Fs.readFile(filename_meta, function(err, response) {
+			meta = response ? response.toString('utf8').parseJSON(true) : CLONE(config);
+			if (!meta.keys)
+				meta.keys = {};
+			meta.id = uid;
+			updatestatus();
+			F.Fs.lstat(filename_data, function(err) {
+				if (err)
+					F.Fs.appendFile(filename_data, 'key,value,min,max,sum,count,tshour,tsday,tsweek,tsmonth,tsyear\n', NOOP);
+			});
+		});
+
+		instance.close = function(removed) {
+			if (removed) {
+				F.Fs.unlink(filename_meta, NOOP);
+				F.Fs.unlink(filename_data, NOOP);
+				db = null;
+			}
+		};
+
+		instance.insert = function(data) {
+
+			var writer = null;
+			var write = false;
+			var key = data.key || data.id || 'Value';
+
+			if (!meta.keys[key])
+				meta.keys[key] = {};
+
+			var tmp = meta.keys[key];
+
+			if (tmp.count && config.type !== 'lastvalue' && config.type !== 'logger') {
+				var date = tmp.date;
+				switch (config.type) {
+					case 'hourly':
+						write = date.getHours() !== NOW.getHours();
+						break;
+					case 'daily':
+						write = date.getDate() !== NOW.getDate();
+						break;
+					case 'monthly':
+						write = date.getMonth() !== NOW.getMonth();
+						break;
+					case 'weekly':
+						write = date.format('w') !== NOW.format('w');
+						break;
+					case 'yearly':
+						write = date.getFullYear() !== NOW.getFullYear();
+						break;
+				}
+			}
+
+			if (write) {
+				writer = {};
+				writer.key = key;
+				writer.value = tmp.value;
+				writer.min = tmp.min;
+				writer.max = tmp.max;
+				writer.sum = tmp.sum;
+				writer.count = tmp.count;
+				writer.date = tmp.date;
+			}
+
+			tmp.date = NOW;
+			tmp.value = data.value;
+
+			if (writer) {
+
+				tmp.min = tmp.value;
+				tmp.max = tmp.value;
+				tmp.count = 0;
+
+				if (config.sum) {
+					if (config.sum === 1)
+						tmp.sum = tmp.value;
+					else
+						tmp.sum = (tmp.sum || 0) + tmp.value;
+				}
+
+			} else {
+
+				if (tmp.min == null || tmp.value < tmp.min)
+					tmp.min = tmp.value;
+
+				if (tmp.max == null || tmp.value > tmp.max)
+					tmp.max = tmp.value;
+
+				if (config.sum)
+					tmp.sum = (tmp.sum || 0) + tmp.value;
+
+				if (config.type === 'logger') {
+					writer = {};
+					writer.key = key;
+					writer.value = tmp.value;
+					writer.min = tmp.min;
+					writer.max = tmp.max;
+					writer.sum = tmp.sum;
+					writer.count = (tmp.count || 0) + 1;
+					writer.date = tmp.date;
+				}
+			}
+
+			tmp.count = (tmp.count || 0) + 1;
+
+			updatestatus();
+			F.Fs.writeFile(filename_meta, JSON.stringify(meta, null, '\t'), NOOP);
+
+			if (!writer)
+				return;
+
+			var values = [];
+
+			// 0 key
+			// 1 value
+			// 2 min
+			// 3 max
+			// 4 sum
+			// 5 count
+			// 6 tsh
+			// 7 tsd
+			// 8 tsw
+			// 9 tsm
+			// 10 tsy
+
+			var ts = writer.date.format('yyyyMMddHH');
+
+			values.push(writer.key);
+			values.push(writer.value + '');
+			values.push((writer.min != null ? writer.min : '') + '');
+			values.push((writer.max != null ? writer.max : '') + '');
+			values.push((writer.sum != null ? writer.sum : '') + '');
+			values.push((writer.count != null ? writer.count : '') + '');
+			values.push(ts);
+			values.push(ts.substring(0, 8));
+			values.push(writer.date.format('yyyyww'));
+			values.push(ts.substring(0, 6));
+			values.push(ts.substring(0, 4));
+
+			F.Fs.appendFile(filename_data, values.join(',') + '\n', NOOP);
+		};
+
+		var updatefile = function(fn) {
+			F.Fs.readFile(filename_data, function(err, data) {
+				var lines = data.toString('utf8').split('\n');
+				fn(lines);
+				F.Fs.writeFile(filename_data, lines.join('\n'), NOOP);
+			});
+		};
+
+		instance.trigger = function(msg) {
+			if (msg.type === 'remove') {
+				// msg.key
+				delete meta.keys[msg.key];
+				updatestatus();
+				F.Fs.writeFile(filename_meta, JSON.stringify(meta, null, '\t'), NOOP);
+				updatefile(function(lines) {
+					var counter = 0;
+					var key = msg.key + ',';
+					while (true) {
+						var line = lines[counter];
+						if (line == null)
+							break;
+						if (line.substring(0, key.length) === key)
+							lines.splice(counter, 1);
+						else
+							counter++;
+					}
+				});
+			} else if (msg.type === 'rename') {
+				// msg.key
+				// msg.name
+				meta.keys[msg.name] = meta.keys[msg.key];
+				delete meta.keys[msg.key];
+				updatestatus();
+				F.Fs.writeFile(filename_meta, JSON.stringify(meta, null, '\t'), NOOP);
+				updatefile(function(lines) {
+					var counter = 0;
+					var key = msg.key + ',';
+					while (true) {
+						var line = lines[counter];
+						if (line == null)
+							break;
+						if (line.substring(0, key.length) === key)
+							lines[counter] = msg.name + ',' + line.substring(key.length);
+						counter++;
+					}
+				});
+			}
+		};
+
+		instance.message_input = function($) {
+
+			var data = $.data;
+			var type = typeof(data);
+
+			if (type === 'number')
+				data = { value: data };
+
+			instance.insert(CLONE(data));
+			$.destroy();
+		};
+
+		instance.message_stats = function($) {
+			var opt = {};
+			opt.filename = filename_data;
+			opt.hours = 48;
+			opt.days = 12;
+			opt.months = 12;
+			opt.years = 6;
+			instance.readstats(opt, function(response) {
+				$.send('stats', response);
+			});
+		};
+
+		instance.message_live = function($) {
+
+			var output = [];
+
+			for (var key in meta.keys) {
+				var data = CLONE(meta.keys[key]);
+				data.id = key.makeid();
+				data.name = key;
+				data.color = meta.color;
+				data.icon = meta.icon;
+				data.unit = meta.unit;
+				data.decimals = meta.decimals;
+				data.data = data.value;
+				data.value = undefined;
+				output.push(data);
+			}
+
+			$.send('stats', output);
+		};
+
+		instance.configure = function() {
+			COPY(config, meta);
+			F.Fs.writeFile(filename_meta, JSON.stringify(meta, null, '\t'), NOOP);
+		};
+
+		instance.readstats = function(opt, callback) {
+
+			var builder = [];
+			var response = {};
+			var prop = 'd';
+
+			var fromhours = opt.hours ? (+(NOW.add('-' + opt.hours + ' hours').format('yyyyMMddHH'))) : 0;
+			var fromdays = opt.days ? (+(NOW.add('-' + opt.days + ' days').format('yyyyMMdd'))) : 0;
+			var frommonths = opt.months ? (+(NOW.add('-' + opt.months + ' months').format('yyyyMM'))) : 0;
+			var fromyear = opt.years ? (NOW.getFullYear() - opt.years) : 0;
+
+			if (opt.hours)
+				response.hours = {};
+
+			if (opt.days)
+				response.days = {};
+
+			if (opt.months)
+				response.months = {};
+
+			if (opt.years)
+				response.years = {};
+
+			if (!opt.type)
+				opt.type = 'max';
+
+			var start = function() {
+
+				var add = function(type, key, x, y) {
+
+					if (!response[type][key])
+						response[type][key] = {};
+
+					var items = response[type][key];
+					var key2 = x + '';
+					var tmp;
+
+					switch (opt.type) {
+						case 'max':
+							tmp = items[key2];
+							if (tmp == null) {
+								items[key2] = y;
+							} else if (tmp < y)
+								items[key2] = y;
+							break;
+						case 'min':
+							tmp = items[key2];
+							if (tmp == null) {
+								items[key2] = y;
+							} else if (tmp > y)
+								items[key2] = y;
+							break;
+					}
+
+				};
+
+				var push = function() {
+
+					var tmp = builder.splice(0);
+					var arr = tmp.join('\n').parseCSV(',');
+					for (var item of arr) {
+
+						for (var key in item) {
+							if (key !== 'a')
+								item[key] = item[key] ? (+item[key]) : 0;
+						}
+
+						if (response.hours && item.g >= fromhours)
+							add('hours', item.a, item.g, item[prop]);
+
+						if (response.days && item.h >= fromdays)
+							add('days', item.a, item.h, item[prop]);
+
+						if (response.months && item.j >= frommonths)
+							add('months', item.a, item.j, item[prop]);
+
+						if (response.years && item.k >= fromyear)
+							add('years', item.a, item.k, item[prop]);
+					}
+				};
+
+				var stream = F.Fs.createReadStream(opt.filename);
+				stream.on('data', U.streamer('\n', function(line, index) {
+					if (index) {
+						var count = builder.push(line.trim());
+						if (count > 100)
+							push();
+					}
+				}));
+
+				CLEANUP(stream, function() {
+
+					builder.length && push();
+
+					var output = {};
+					var tmp;
+
+					for (var a in response) {
+
+						var stat = response[a];
+
+						output[a] = [];
+
+						for (var b in stat) {
+
+							var tmp = stat[b];
+							var arr = [];
+
+							for (var c in tmp) {
+								var date;
+
+								switch (a) {
+									case 'hours':
+										date = new Date(+c.substring(0, 4), (+c.substring(4, 6)) - 1, +c.substring(6, 8), +c.substring(8, 10), 0, 0);
+										break;
+									case 'days':
+										date = new Date(+c.substring(0, 4), (+c.substring(4, 6)) - 1, +c.substring(6, 8), 12, 0, 0);
+										break;
+									case 'months':
+										date = new Date(+c.substring(0, 4), (+c.substring(4, 6)) - 1, 1, 12, 0, 0);
+										break;
+									case 'years':
+										date = new Date(+c.substring(0, 4), 0, 1, 12, 0, 0);
+										break;
+								}
+
+								arr.push({ x: date, y: tmp[c] });
+							}
+
+							output[a].push({ name: b, unit: config.unit, decimals: config.decimals, data: arr });
+						}
+
+					}
+
+					callback && callback(output);
+				});
+
+			};
+
+			setImmediate(start);
+		};
+
+	};
+
+</script>
+
+<style>
+	.CLASS hr { margin: 10px 0; }
+	.CLASS [contenteditable] { outline: 0 }
+	.CLASS .padding { padding: 10px; font-size: 12px; }
+	.CLASS .padding .meta { height: 16px; font-size: 11px; }
+	.CLASS .padding .meta span { color: #888; margin-right: 5px; width: 30px; float: left; }
+</style>
+
+<settings>
+	<div class="padding">
+		<div class="row">
+			<div class="col-md-6 m">
+				<ui-component name="input" path="?.name" config="required:1;placeholder:Dataset name">Name</ui-component>
+			</div>
+			<div class="col-md-3 m">
+				<ui-component name="input" path="?.type" config="dirsource:lastvalue|Last value only,logger|Logger,hourly|Hourly,daily|Daily,weekly|Weeekly,monthly|Monthly,yearly|Yearly;required:1">Type</ui-component>
+			</div>
+			<div class="col-md-3 m">
+				<ui-component name="input" path="?.sum" config="dirsource:0|Disabled,1|Periodical sum,2|Total sum;type:number">Calculate the sum</ui-component>
+			</div>
+		</div>
+		<div class="grid-4">
+			<div class="m">
+				<ui-component name="input" path="?.unit" config="align:1">Unit</ui-component>
+			</div>
+			<div class="m">
+				<ui-component name="input" path="?.decimals" config="align:1;type:number;format:" default="2">Decimals</ui-component>
+			</div>
+			<div class="m">
+				<ui-component name="input" path="?.icon" config="type:icon">Icon</ui-component>
+			</div>
+			<div class="m">
+				<ui-component name="input" path="?.color" config="type:color">Color</ui-component>
+			</div>
+		</div>
+		<div class="caption m">
+			<label><i class="ti ti-chart-line"></i>Stats</label>
+		</div>
+		<p>Zero values will prevent statistics from being displayed for the selected period.</p>
+		<div class="grid-4">
+			<div class="m">
+				<ui-component name="input" path="?.hours" config="type:number;format:">Hours</ui-component>
+				<div class="help">How many hours to be returned?</div>
+			</div>
+			<div class="m">
+				<ui-component name="input" path="?.days" config="type:number;format:">Days</ui-component>
+				<div class="help">How many days to be returned?</div>
+			</div>
+			<div class="m">
+				<ui-component name="input" path="?.months" config="type:number;format:">Months</ui-component>
+				<div class="help">How many months to be returned?</div>
+			</div>
+			<div class="m">
+				<ui-component name="input" path="?.years" config="type:number;format:">Years</ui-component>
+				<div class="help">How many years to be returned?</div>
+			</div>
+		</div>
+	</div>
+</settings>
+
+<readme>
+The component stores data as CSV Dataset for e.g. Dashboard application. Dataset is stored in `/private/` path that is available with the help of the Flow access token.
+
+CSV file contains only processed values (according to the period) and the `.meta` file contains meta data + last value.
+
+__Input for data processing__:
+
+```js
+{
+	key: String,    // optional, e.g. device_id | device_name
+	value: Number   // measured value
+}
+```
+
+### CSV columns
+
+- `a` = `key {String}`
+- `b` = `value {Number}`
+- `c` = `min {Number}`
+- `d` = `max {Number}`
+- `e` = `sum {Number}`
+- `f` = `count {Number}`
+- `g` = `tshour {Number}`in the form `yyyyMMddhh`
+- `h` = `tsday {Number}` in the form `yyyyMMdd`
+- `i` = `tsweek {Number}` in the form `yyyyww`
+- `j` = `tsmonth {Number}` in the form `yyyyMM`
+- `k` = `tsyear {Number}` in the form `yyyy`
+</readme>
+
+<script>
+	TOUCH(function(exports, reinit) {
+
+		var laststatus;
+
+		exports.configure = function(config, isinit) {
+			if (!isinit) {
+				exports.status(laststatus);
+				exports.rebind('status');
+			}
+		};
+
+		exports.status = function(status, isinit) {
+			laststatus = status;
+			if (status) {
+				status.type = exports.config.type;
+				for (var key in status.keys)
+					status.keys[key].unit = exports.config.unit;
+			}
+		};
+
+		exports.rename = function(meta, next) {
+
+			var id = ATTRD(meta.element);
+			var value = meta.value.replace(/\"|\,/g, '');
+
+			if (id !== value) {
+				next(false);
+				// Due to "enter" key
+				setTimeout(ASETTER('approve/show', 'Are you sure you want to rename "{0}" to <b>"{1}"</b>?'.format(id, value), '"ti ti-trash" Remove', function() {
+					exports.trigger({ type: 'rename', key: id, name: value });
+					next(value);
+				}), 200);
+			} else
+				next(false);
+
+		};
+
+		exports.click = function(el) {
+			var id = ATTRD(el);
+			SETTER('approve/show', 'Are you sure you want to remove selected key <b>"{0}"</b>?'.format(id.encode()), '"ti ti-trash" Remove', function() {
+				exports.trigger({ type: 'remove', key: id });
+			});
+		};
+
+	});
+</script>
+
+<body>
+	<header>
+		<i class="ICON"></i>NAME
+	</header>
+	<footer>
+		<div class="padding">
+			<ui-bind path="CONFIG" config="template">
+				<script type="text/html">
+					<span class="badge badge-medium badge-color mr5">{{ value.type }}</span> {{ if value.icon }}<i class="{{ value.icon }} mr5"></i>{{ fi }}<b>{{ value.name }}</b>
+				</script>
+			</ui-bind>
+			<ui-bind path="STATUS" config="template;show" class="keys hidden">
+				<script type="text/html">
+					<div class="selectable">
+						<div class="meta mt5">
+							<span>Meta:</span><div><a href="/private/?filename=dataset_{{ value.id }}.json&token=" target="_blank">dataset_{{ value.id }}.json</a></div>
+						</div>
+						{{ if value.type !== 'lastvalue' }}
+						<div class="meta">
+							<span>Data:</span><div><a href="/private/?filename=dataset_{{ value.id }}.csv&token=" target="_blank">dataset_{{ value.id }}.csv</a></div>
+						</div>
+						{{ fi }}
+					</div>
+					<hr />
+					<div class="selectable">
+					{{ foreach m in value.keys }}
+						<div class="keyvalue small" data-id="{{ m.key }}">
+							<span><i class="ti ti-trash red clickable"></i><b class="edit" data-edit="required:1;offsetWidth:150;exec:TOUCH.rename" data-id="{{ m.key }}">{{ m.key }}</b></span>
+							<div class="right">{{ m.value.value }} {{ m.value.unit }}</div>
+						</div>
+					{{ end }}
+					</div>
+				</script>
+			</ui-bind>
+		</div>
+	</footer>
+</body>

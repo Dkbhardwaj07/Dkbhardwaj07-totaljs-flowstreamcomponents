@@ -1,0 +1,106 @@
+<script total>
+
+	exports.id = 'duration';
+	exports.name = 'Duration';
+	exports.group = 'Stats';
+	exports.version = '1';
+	exports.icon = 'ti ti-clock';
+	exports.author = 'Total.js';
+	exports.inputs = [{ id: 'input', name: 'Input' }];
+	exports.outputs = [{ id: 'output', name: 'Output' }];
+
+	exports.make = function(instance, config) {
+
+		var stats = {};
+
+		stats.min = null;
+		stats.max = null;
+		stats.avg = 0;
+		stats.last = 0;
+		stats.count = 0;
+
+		instance.trigger = function() {
+			stats.min = null;
+			stats.avg = 0;
+			stats.max = null;
+			stats.last = null;
+			stats.count = 0;
+			instance.status(stats);
+		};
+
+		instance.message = function($) {
+
+			var duration = ((Date.now() - $.duration) / 1000).floor(3);
+
+			if (stats.min === null || stats.min > duration)
+				stats.min = duration;
+
+			if (stats.max === null || stats.max < duration)
+				stats.max = duration;
+
+			stats.avg = ((stats.max + stats.min) / 2).floor(3);
+			stats.last = duration;
+			stats.count++;
+
+			instance.status(stats, 500);
+			$.send('output', stats);
+		};
+
+	};
+
+</script>
+
+<readme>
+The component counts message duration. All values except `count` are defined in seconds.
+
+__Output__:
+
+```js
+{
+	min: Number,
+	max: Number,
+	avg: Number,
+	last: Number,
+	count: Number
+}
+```
+</readme>
+
+<style>
+	.CLASS .keyvalue > span { width: 60px; }
+	.CLASS .keyvalue > div { margin-left: 0; }
+	.CLASS footer { padding: 10px; width: 180px; }
+</style>
+
+<body>
+	<header>
+		<i class="ICON"></i>NAME
+	</header>
+	<footer >
+		<button class="exec button" data-exec="FUNC.trigger">Reset</button>
+		<ui-bind path="STATUS" config="template;.keyvalue" class="mt10 block">
+			<script type="text/html">
+				<div class="keyvalue small">
+					<span>Min</span>
+					<div class="right">{{ value.min | format(3) | empty }} sec.</div>
+				</div>
+				<div class="keyvalue small">
+					<span>Max</span>
+					<div class="right">{{ value.max | format(3) | empty }} sec.</div>
+				</div>
+				<div class="keyvalue small">
+					<span>Avg</span>
+					<div class="right">{{ value.avg | format(3) | empty }} sec.</div>
+				</div>
+				<div class="keyvalue small">
+					<span>Last</span>
+					<div class="right">{{ value.last | format(3) | empty }} sec.</div>
+				</div>
+				<div class="keyvalue small">
+					<span>Count</span>
+					<div class="right b">{{ value.count | format(0) | empty }}</div>
+				</div>
+			</script>
+		</ui-bind>
+	</footer>
+</body>

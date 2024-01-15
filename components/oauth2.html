@@ -1,0 +1,180 @@
+<script total>
+
+	exports.id = 'oauth2';
+	exports.name = 'OAuth 2.0';
+	exports.icon = 'ti ti-key';
+	exports.author = 'Total.js';
+	exports.version = '1';
+	exports.group = 'API';
+	exports.config = { urltoken: '', urlauthorize: '', variable: '', clientid: '', clientsecret: '' };
+
+	exports.call = function(data, callback) {
+
+		switch(data.type) {
+			case 'oauth':
+				var opt = {};
+				opt.method = 'POST';
+				opt.url = data.data.url;
+				opt.type = 'json';
+				delete data.data.url;
+				opt.body = JSON.stringify(data.data);
+				opt.callback = function(err, response) {
+					var response = response.body.parseJSON(true);
+					callback(response);
+				};
+				REQUEST(opt);
+				break;
+		}
+
+	};
+
+	exports.make = function(instance, config) {
+		instance.configure = function() {
+			if (config.variable && config.accesstoken) {
+				instance.main.variables[config.variable] = config.accesstoken;
+				instance.newvariables(instance.main.variables);
+			}
+		};
+	};
+
+</script>
+
+<readme>
+	This component can obtain OAuth 2.0 access token from 3rd party service.
+</readme>
+
+<settings>
+	<div class="CLASS-settings padding">
+		<p>To obtain an OAuth 2.0 access token, you must follow the OAuth 2.0 specification on the service you want to use.</p>
+		<div class="grid-2">
+			<div class="m">
+				<ui-component name="input" path="?.urlauthorize" config="required:1;type:url;innerlabel:1;placeholder:Enter a value">Authorize URL</ui-component>
+			</div>
+			<div class="m">
+				<ui-component name="input" path="?.urltoken" config="required:1;type:url;innerlabel:1;placeholder:Enter a value">Token URL</ui-component>
+			</div>
+		</div>
+		<hr class="nmt" />
+		<div class="fs12 m"><i class="ti ti-globe mr5"></i>Your redirect URL: <b><ui-bind path="flow.head.notify" config="text;empty" class="red"></ui-bind></b></div>
+		<div class="grid-3">
+			<div class="m">
+				<ui-component name="input" path="?.clientid" config="required:1;camouflage:1;innerlabel:1;placeholder:Enter client id">Client ID</ui-component>
+				<div class="help">Required</div>
+			</div>
+			<div class="m">
+				<ui-component name="input" path="?.clientsecret" config="required:1;camouflage:1;innerlabel:1;placeholder:Enter client secret">Client secret</ui-component>
+				<div class="help">Required</div>
+			</div>
+			<div class="m">
+				<ui-component name="input" path="?.scope" config="required:0;innerlabel:1;placeholder:email,profile">Scope</ui-component>
+				<div class="help">Optional</div>
+			</div>
+		</div>
+		<hr />
+		<div class="m center">
+			<p>To obtain of OAuth 2.0 access token, you must click on the button below.</p>
+			<div style="width:150px;margin:0 auto">
+				<button class="button exec b" data-exec="tmpoauth2.authorize"><ui-bind path="?" config="enabled:value.urlauthorize && value.urltoken && value.clientid && value.clientsecret" disabled></ui-bind><i class="ti ti-key"></i>Authorize</button>
+			</div>
+			<br />
+		</div>
+		<ui-bind path="?.accesstoken" config="show" class="hidden">
+			<div class="grid-2">
+				<div class="m">
+					<ui-component name="input" path="?.accesstoken" config="required:1;disabled:1;innerlabel:1;placeholder:Will be filled automatically after authorization">Access token</ui-component>
+					<div class="help">OAuth 2.0 access token</div>
+				</div>
+				<div class="m">
+					<ui-component name="input" path="?.variable" config="innerlabel:1;placeholder:Enter a variable key">Assign token to the global variable</ui-component>
+					<div class="help">The access token will be automatically assigned into the global variables</div>
+				</div>
+			</div>
+		</ui-bind>
+		<ui-bind path="?.response" config="html pre:value ? Thelpers.jsonformat(value) : ''__show" class="hidden bg-smoke block">
+			<div class="padding">
+				<div class="fs12">Response:</div>
+				<pre style="font-size:12px;tab-size:4;margin:0;padding:5px 0"></pre>
+				<div class="help red"><i class="ti ti-exclamation-triangle"></i>Don't forget to save settings if you change something</div>
+			</div>
+		</ui-bind>
+	</div>
+</settings>
+
+<style>
+	.CLASS .exec { cursor: pointer; }
+	.CLASS footer { padding: 8px 8px; font-size: 11px; }
+</style>
+
+<body>
+	<header>
+		<i class="ICON"></i>NAME
+	</header>
+	<footer>
+		<ui-bind path="CONFIG.accesstoken" config="show">
+			<div><span class="exec link" data-exec="tmpoauth2.copy"><i class="ti ti-copy mr5"></i>Copy access token</span></div>
+		</ui-bind>
+	</footer>
+</body>
+
+<script>
+	TOUCH(function(exports) {
+
+		var tmp = W.tmpoauth2;
+		if (!tmp) {
+			tmp = W.tmpoauth2 = {};
+			tmp.authorize = function(el) {
+				var scope = el.scope();
+				var model = scope.get();
+				var args = {};
+				args.client_id = model.clientid;
+				args.response_type = 'code';
+				if (model.scope)
+					args.scope = model.scope;
+				args.redirect_uri = args.redirect_url = flow.head.notify;
+				args.state = exports.id;
+
+				for (var key in args) {
+					var val = args[key];
+					if (val && val.indexOf('{'))
+						args[key] = val.replace(/\{.*?\}/g, text => flow.variables[text.substring(1, text.length - 1).trim()] || text);
+				}
+
+				var draft = exports.draft();
+				W.open(draft.urlauthorize + QUERIFY(args));
+			};
+
+			tmp.copy = function(el) {
+				var config = flow.config[ATTRD(el)];
+				SETTER('clipboard/copy', config.accesstoken);
+				SETTER('notify/success', 'Copied');
+			};
+		}
+
+		exports.notify = function(data) {
+			var draft = exports.draft();
+			if (draft) {
+				var query = data.query;
+				var model = {};
+				model.url = draft.urltoken;
+				model.client_id = draft.clientid;
+				model.client_secret = draft.clientsecret;
+				model.code = query.code;
+				model.redirect_uri = flow.head.notify;
+				model.grant_type = 'authorization_code';
+
+				for (var key in model) {
+					var val = model[key];
+					if (val && val.indexOf('{'))
+						model[key] = val.replace(/\{.*?\}/g, text => flow.variables[text.substring(1, text.length - 1).trim()] || text);
+				}
+
+				exports.call({ type: 'oauth', data: model }, ERROR(function(response) {
+					exports.draft('accesstoken @change', response.access_token);
+					exports.draft('response', response);
+				}), true);
+
+			}
+		};
+
+	});
+</script>

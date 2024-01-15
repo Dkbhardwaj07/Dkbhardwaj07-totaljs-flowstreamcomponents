@@ -1,0 +1,131 @@
+<script total>
+
+	exports.id = 'postgresql';
+	exports.name = 'PostgreSQL';
+	exports.group = 'Databases';
+	exports.icon = 'ti ti-database';
+	exports.author = 'Total.js';
+	exports.version = '2';
+	exports.config = {};
+	exports.inputs = [{ id: 'input', name: 'Input' }];
+	exports.outputs = [{ id: 'output', name: 'Output' }];
+	exports.npm = ['pg'];
+	exports.POOLS = {};
+
+	exports.make = function(instance, config) {
+
+		const { Pool } = require('pg')
+		var PG;
+
+		instance.message = function($) {
+			var data = $.data;
+
+			if (!PG || !PG.pool)
+				return $.send('output', { error: 'Postgre connection not configured' });
+
+			PG.pool.query(data.query, (err, response) => {
+				if (err)
+					return $.send('output', { error: err.message });
+					
+				var { command, rows, rowCount } = response;
+				$.send('output', { command, rows, rowCount });
+			});
+		};
+
+		instance.configure = function() {
+
+			// same connection, ignore
+			if (!config.connection || (PG && PG.string === config.connection))
+				return;
+
+			instance.close();
+
+			// already existing connection, use it
+			if (exports.POOLS[config.connection]) {
+				PG = exports.POOLS[config.connection];
+				PG.count++;
+				return;
+			}
+
+			var pool = new Pool({ connectionString: config.connection });
+			PG = exports.POOLS[config.connection] = {
+				pool,
+				count: 1,
+				string: config.connection
+			};
+
+			pool.on('error', (err, client) => {
+				console.log('[PG] Unexpected error on idle client', err);
+				if (err)
+					instance.throw(err.message);
+			});
+
+			pool.query('SELECT NOW() AS message;', (err, response) => {
+				if (err)
+					instance.throw(err.message);
+			});
+		};
+
+		instance.close = function() {
+			if (PG) {
+				PG.count--;
+				if (PG.count === 0) {// last component using this connection so destroy it
+					PG.pool.end();
+					delete exports.POOLS[config.connection];
+				}
+				PG = null;
+			}
+		};
+
+		instance.configure();
+	};
+
+</script>
+
+<readme>
+PostgreSQL
+
+## Input
+Expected data:
+```javascript
+{
+	query: 'SELECT * FROM tblname;'
+}
+```
+Output:
+```javascript
+{
+	command: 'INSERT', // SELECT, etc.
+	rows: [], // 
+	rowCount: 1
+}
+```
+</readme>
+
+<settings>
+	<div class="padding">
+		<div class="row m">
+			<div class="col-md-12">
+				<ui-component name="input" path="?.connection" config="required:1">Connection string</ui-component>
+				<div class="help">e.g.: postgresql://user:password@localhost:5432/dbname</div>
+			</div>
+		</div>
+	</div>
+</settings>
+
+<style>
+	.CLASS footer { padding: 10px; font-size: 12px; }
+</style>
+
+<script>
+
+</script>
+
+<body>
+	<header>
+		<i class="ICON"></i>NAME
+	</header>
+	<footer>
+		<ui-bind path="STATUS.error" config="text" class="red"></ui-bind>
+	</footer>
+</body>

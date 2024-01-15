@@ -1,0 +1,52 @@
+<script total>
+	exports.id = 'comment';
+	exports.name = 'Comment';
+	exports.group = 'Common';
+	exports.icon = 'ti ti-comment';
+	exports.author = 'Total.js';
+	exports.version = '1';
+	exports.config = { text: 'Comment' };
+	exports.meta = { settingswidth: 1100 };
+
+	exports.make = function(instance, config) {
+	};
+
+</script>
+
+<settings>
+	<div class="padding">
+		<ui-component name="codemirror" path="?.text" config="type:markdown;parent:auto;minheight:300;margin:65;linenumbers:0"></ui-component>
+		<div class="help">Supports Markdown</div>
+	</div>
+</settings>
+
+<style>
+	.CLASS { max-width: 500px !important; }
+	.CLASS header button { margin-left: 10px; }
+	.CLASS footer .markdown { padding: 10px; font-size: 12px; border-top: 0 !important; color: #000; }
+	.ui-dark .CLASS footer .markdown { color: #F0F0F0; }
+</style>
+
+<readme>
+This component renders a small markdown comment inside the body.
+</readme>
+
+<body>
+	<header>
+		<button class="button">Open in window</button>
+		<i class="ICON"></i>NAME
+	</header>
+	<footer><ui-bind path="!CONFIG.text" config="html div:value.markdown(value, { element: el })" class="markdown-small selectable"><div class="markdown"></div></ui-bind></footer>
+</body>
+
+<script>
+
+	TOUCH(function(exports, reinit) {
+		if (!reinit) {
+			exports.element.on('click', 'button', function() {
+				FUNC.readme('Comment', exports.config.text || '');
+			});
+		}
+	});
+
+</script>

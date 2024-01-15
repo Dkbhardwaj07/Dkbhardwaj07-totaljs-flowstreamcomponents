@@ -1,0 +1,75 @@
+<script total>
+
+	exports.id = 'sms';
+	exports.name = 'SMS';
+	exports.group = 'Total.js API';
+	exports.version = '1';
+	exports.icon = 'ti ti-tablet';
+	exports.author = 'Total.js';
+	exports.config = { token: '', to: '', from: '', body: '', isdata: false };
+	exports.inputs = [{ id: 'input', name: 'Input' }];
+
+	exports.make = function(instance, config) {
+
+		instance.message = function($) {
+			var cfg = $.variables(config, $.data);
+			var msg = {};
+			msg.to = cfg.to;
+			msg.from = cfg.from;
+			msg.body = cfg.isdata ? $.data : cfg.body;
+			$.destroy();
+			TotalAPI(cfg.token, 'sms', msg, function(err) {
+				instance.status({ response: err ? err.toString() : '' });
+			});
+		};
+
+	};
+
+</script>
+
+<style>
+	.CLASS .error { font-size: 12px; padding: 10px; color: red; }
+</style>
+
+<readme>
+The component sends a SMS message.
+</readme>
+
+<settings>
+	<div class="padding bg-smoke">
+		<ui-component name="input" path="?.token" config="required:1;camouflage:*">Total API token</ui-component>
+		<div class="help">Supports dynamic variables in the form <code>{key}</code>. Generate your token on <a href="https://platform.totaljs.com/?open=api" target="_blank">https://platform.totaljs.com</a> - Total.js API Services.</div>
+	</div>
+	<div class="padding">
+		<div class="row">
+			<div class="col-md-4 m">
+				<ui-component name="input" path="?.from">From</ui-component>
+				<div class="help"><b>International format</b>. Supports dynamic variables in the form <code>{key}</code></div>
+			</div>
+			<div class="col-md-4 m">
+				<ui-component name="input" path="?.to">To</ui-component>
+				<div class="help"><b>International format</b>. Supports dynamic variables in the form <code>{key}</code></div>
+			</div>
+		</div>
+	</div>
+	<hr class="nmt nmb" />
+	<div class="padding">
+		<ui-component name="input" path="?.isdata" config="type:checkbox" class="b mt5">Send incoming message data only</ui-component>
+	</div>
+	<div data-bind="?.isdata__hide" class="hidden">
+		<hr class="nmt nmb" />
+		<div class="padding">
+			<ui-component name="input" path="?.body" config="maxlength:500;required:1">Message</ui-component>
+			<div class="help m">Supports dynamic variables in the form <code>{key}</code>. The component reads data from the message data and then from all defined variables.</div>
+		</div>
+	</div>
+</settings>
+
+<body>
+	<header>
+		<i class="ICON"></i>NAME
+	</header>
+	<footer>
+		<ui-bind path="!STATUS.response" config="text;show" class="error hidden block"></ui-bind>
+	</footer>
+</body>

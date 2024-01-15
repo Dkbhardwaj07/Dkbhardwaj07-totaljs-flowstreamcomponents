@@ -1,0 +1,115 @@
+<script total>
+
+	exports.id = 'mqttsubscribe';
+	exports.name = 'MQTT Subscribe';
+	exports.icon = 'ti ti-sign-in';
+	exports.group = 'MQTT';
+	exports.config = { broker: '' };
+	exports.outputs = [{ id: 'message', name: 'Message' }];
+	exports.author = 'Martin Smola';
+	exports.version = '3';
+	exports.flags = ['mqttbroker-dep'];
+
+	exports.make = function(instance, config) {
+
+		var subscribed = false;
+		var broker, topic;
+
+		instance.configure = function() {
+
+			if (subscribed && broker)
+				broker.unsubscribe(instance.id, topic);
+
+			topic = config.topic;
+
+			broker = instance.main.find(config.broker);
+
+			if (broker) {
+				broker.subscribe(instance.id, topic);
+				subscribed = true;
+				instance.status({ status: broker.state.status + ' (subscribed)', topic });
+			} else {
+				instance.status({ status: 'Broker not found', topic });
+			}
+		};
+
+		instance.onmessage = function(topic, message, match, ts) {
+			instance.send('message', { topic, message, match, ts });
+		};
+
+		instance.close = function() {
+			if (subscribed && broker)
+				broker.unsubscribe(instance.id, topic);
+		};
+
+		instance.configure();
+	};
+
+	exports.call = function(data, answer) {
+		var arr = [];
+
+		var instances = this.instances();
+
+		instances = instances.filter(i => i.module.flags && i.module.flags.includes('mqttbroker'));
+		for (let com of instances)
+			arr.push({ id: com.id, name: `${com.state.name} (${com.state.status})` });
+
+		answer(arr);
+	};
+</script>
+
+<readme>
+MQTT Subscribe
+</readme>
+
+<style>
+	.CLASS footer { padding: 10px; font-size: 11px; }
+	.CLASS footer > ui-bind > div { height: 16px; }
+	.CLASS footer b { float: right; margin-left: 12px; }
+</style>
+
+<script>
+	ON('configure_mqttsubscribe', function(data) {
+		data.call(function(response) {
+			SET('%brokers', response);
+		}, true);
+	});
+</script>
+
+<settings>
+	<div class="padding">
+		<div class="row">
+			<div class="col-md-6">
+				<ui-component name="input" path="?.broker" config="dirsource:%brokers;dirraw:1;placeholder:Select broker;dirempty:No broker;required:1" class="m"><b>Broker</b></ui-component>
+			</div>
+		</div>
+		<div class="row">
+			<div class="col-md-6">
+				<ui-component name="input" path="?.topic" config="placeholder:devices/status;required:1" class="m"><b>Topic</b></ui-component>
+			</div>
+		</div>
+		<div class="row">
+			<div class="col-md-12">
+				<p>
+					<b>The topic supports wildcards like:</b><br>
+					- devices/+/status -> devices/1/status or devices/123456/status etc.<br>
+					- devices/#        -> any topic begining with devices/.......
+				</p>
+			</div>
+		</div>
+	</div>
+</settings>
+
+<body>
+	<header>
+		<i class="ICON"></i>NAME
+	</header>
+	<footer>
+		<ui-bind path="!STATUS" config="template;show">
+			<script type="text/html">
+				<div><b>{{ value.status }}</b>Status</div>
+				<div><b>{{ value.topic }}</b>Topic</div>
+			</script>
+		</ui-bind>
+	</footer>
+</body>

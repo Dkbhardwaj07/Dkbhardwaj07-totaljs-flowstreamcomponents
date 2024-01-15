@@ -1,0 +1,57 @@
+<script total>
+
+	exports.id = 'counter';
+	exports.name = 'Counter';
+	exports.group = 'Common';
+	exports.version = '1';
+	exports.icon = 'ti ti-calculator';
+	exports.author = 'Total.js';
+	exports.config = {};
+	exports.inputs = [{ id: 'input', name: 'Input' }];
+
+	exports.make = function(instance) {
+
+		var status = { count: 0, ts: null };
+
+		instance.message = function($) {
+			status.count++;
+			status.ts = NOW = new Date();
+			instance.status(status, 200);
+			$.destroy();
+		};
+
+		instance.trigger = function(data) {
+			status.count = 0;
+			status.ts = null;
+			instance.status(status);
+		};
+
+		instance.status(status);
+
+	};
+
+</script>
+
+<style>
+	.CLASS .status { font-size: 35px; margin: 0; padding: 0 10px 10px; font-weight: bold; text-align: center; }
+	.CLASS .ts { text-align: center; font-size: 11px; color: #777; padding: 5px 0; border-top: 1px solid rgba(0,0,0,0.1); margin: 0 15px; }
+</style>
+
+<readme>
+The component counts incoming messages.
+</readme>
+
+<body>
+	<header>
+		<button class="exec button" data-exec="FUNC.trigger">Reset</button>
+		<i class="ICON"></i>NAME
+	</header>
+	<footer>
+		<ui-bind path="!STATUS" config="template" class="block">
+			<script type="text/html">
+				<div class="status">{{ value.count }}</div>
+				<div class="ts">{{ if value.ts }}{{ value.ts | format('[ts]') }}{{ else }}---{{ fi }}</div>
+			</script>
+		</ui-bind>
+	</footer>
+</body>

@@ -1,0 +1,39 @@
+<script total>
+
+	exports.id = 'input';
+	exports.name = 'Input';
+	exports.group = 'FlowStream';
+	exports.version = '2';
+	exports.icon = 'ti ti-wifi';
+	exports.author = 'Total.js';
+	exports.config = { name: '', readme: '' };
+	exports.outputs = [{ id: 'data', name: 'Data' }];
+	exports.type = 'input';
+
+	exports.make = function(instance, config) {
+		instance.input = function(fromflowstreamid, fromid, data, reference) {
+			var msg = instance.newmessage(data);
+			msg.refs.reference = reference;
+			msg.send('data');
+		};
+	};
+
+</script>
+
+<settings>
+	<div class="padding">
+		<ui-component name="input" path="?.name" config="required:1" class="m"><b>Input name</b></ui-component>
+		<ui-component name="input" path="?.readme" config="monospace:1;type:multiline;height:250">Readme</ui-component>
+		<div class="help">Supports markdown format</div>
+	</div>
+</settings>
+
+<readme>
+The component receives data in an encapsulated FlowStream.
+</readme>
+
+<body>
+	<header>
+		<i class="ICON"></i>NAME: <ui-bind path="CONFIG.name" config="text;empty" class="b"></ui-bind>
+	</header>
+</body>

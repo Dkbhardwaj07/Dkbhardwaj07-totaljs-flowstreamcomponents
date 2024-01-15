@@ -1,0 +1,161 @@
+<script total>
+
+	exports.id = 'downloader';
+	exports.name = 'Downloader';
+	exports.icon = 'ti ti-download';
+	exports.group = 'Common';
+	exports.author = 'Total.js';
+	exports.version = '2';
+	exports.config = { output: 'file', path: 'value', urlpath: 'url' };
+	exports.inputs = [{ id: 'input', name: 'Input' }];
+	exports.outputs = [{ id: 'output', name: 'Output' }, { id: 'error', name: 'Error' }];
+
+	exports.make = function(instance, config) {
+
+		var cfg;
+
+		instance.message = function($) {
+
+			var data = $.data;
+			var opt = {};
+
+			if (typeof(data) === 'string')
+				data = { url: data };
+
+			opt.url = cfg.urlpathdot ? U.get(data, cfg.urlpath) : data[cfg.urlpath];
+
+			if (!opt.url) {
+				$.send('error', 'Invalid URL address');
+				return;
+			}
+
+			var iserror = false;
+
+			opt.method = 'GET';
+			opt.custom = true
+
+			opt.callback = function(err, response) {
+
+				var abort = function(e) {
+					iserror = true;
+					$.send('error', (e || 'Aborted').toString());
+				};
+
+				if (cfg.output === 'file') {
+
+					var filename = PATH.temp('{0}.bin'.format(UID()));
+					var writer = F.Fs.createWriteStream(filename);
+
+					response.stream.pipe(writer);
+					response.stream.on('abort', abort);
+					response.stream.on('error', abort);
+
+					CLEANUP(writer, function() {
+
+						if (iserror) {
+							F.Fs.unlink(filename, NOOP);
+							return;
+						}
+
+						if (cfg.pathdot)
+							U.set(data, cfg.path, filename);
+						else
+							data[cfg.path] = filename;
+						$.send('output', data);
+					})
+					$.on('terminate', () => F.Fs.unlink(filename, NOOP));
+				} else {
+
+					var buffer = [];
+
+					response.stream.on('data', chunk => buffer.push(chunk));
+					response.stream.on('abort', abort);
+					response.stream.on('error', abort);
+
+					CLEANUP(response.stream, function() {
+
+						if (iserror)
+							return;
+
+						var buf = Buffer.concat(buffer);
+
+						if (config.output === 'base64')
+							buf = buf.toString('base64');
+						else if (config.output === 'datauri')
+							buf = 'data:' + response.headers['content-type'] + ';base64,' + buf.toString('base64');
+
+						if (cfg.pathdot)
+							U.set(data, cfg.path, buf);
+						else
+							data[cfg.path] = buf;
+
+						$.send('output', data);
+					});
+				}
+
+			};
+
+			REQUEST(opt);
+		};
+
+		instance.vary = function() {
+			instance.configure();
+		};
+
+		instance.configure = function() {
+			cfg = instance.replace(config);
+			cfg.pathdot = cfg.path.indexOf('.') !== -1;
+			cfg.urlpathdot = cfg.urlpath.indexOf('.') !== -1;
+		};
+
+		instance.configure();
+
+	};
+
+</script>
+
+<readme>
+The component downloads the file from the URL address as it is.
+
+## Input
+
+```js
+{
+	url: 'https://example.com/file.jpg', // file url
+}
+```
+
+## Output
+
+```js
+{
+	value: '/tmp/xyz.bin',
+	...
+}
+```
+
+The file will be automaticaly deleted once the message is destroyed.
+</readme>
+
+<settings>
+	<div class="padding">
+		<p>This component supports variables in the form <span class="badge badge-medium badge-silver">{variable}</span>.</p>
+		<div class="grid-3">
+			<div class="m">
+				<ui-component name="input" path="?.output" config="dirsource:file|File,base64|BASE64,datauri|Data URI,buffer|Buffer">Output</ui-component>
+			</div>
+			<div class="m">
+				<ui-component name="input" path="?.urlpath" config="required:1;monospace:1">Path for reading URL address</ui-component>
+			</div>
+			<div class="m">
+				<ui-component name="input" path="?.path" config="required:1;monospace:1">Assign response to the path</ui-component>
+			</div>
+		</div>
+	</div>
+</settings>
+
+<body>
+	<header>
+		<i class="ICON"></i>NAME
+	</header>
+</body>

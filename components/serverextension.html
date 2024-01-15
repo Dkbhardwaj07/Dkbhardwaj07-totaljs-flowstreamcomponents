@@ -1,0 +1,83 @@
+<script total>
+
+	exports.id = 'serverextension';
+	exports.name = 'Server extension';
+	exports.group = 'Common';
+	exports.version = '1';
+	exports.icon = 'ti ti-check-square';
+	exports.author = 'Total.js';
+	exports.config = { name: 'My extension', install: '', uninstall: '', icon: exports.icon };
+
+	exports.make = function(instance, config) {
+
+		var install = null;
+		var uninstall = null;
+
+		instance.configure = function() {
+
+			if (uninstall) {
+				uninstall.call(instance, instance, require);
+				uninstall = null;
+				setTimeout(instance.configure, 1000);
+				return;
+			}
+
+			try {
+				install = config.install ? new Function('instance', 'require', config.install) : null;
+				uninstall = config.uninstall ? new Function('instance', 'require', config.uninstall) : null;
+			} catch (e) {
+				install = null;
+				uninstall = null;
+				instance.throw('Code: ' + e.message);
+			}
+
+			install && install.call(instance, instance, require);
+
+		};
+
+		instance.close = function() {
+			uninstall && uninstall.call(instance, instance, require);
+			uninstall = null;
+			install = null;
+		};
+
+		instance.configure();
+
+	};
+
+</script>
+
+<readme>
+The component installs Total.js server-side extension. In other words: it can evaluate JavaScript code when the component is initialized or the component settings is changed.
+</readme>
+
+<settings>
+	<div class="padding bg-smoke">
+		<div class="row">
+			<div class="col-md-9 m">
+				<ui-component name="input" path="?.name" config="required:1;placeholder:e.g. Database">Name</ui-component>
+			</div>
+			<div class="col-md-3 m">
+				<ui-component name="input" path="?.icon" config="type:icon">Icon</ui-component>
+			</div>
+		</div>
+	</div>
+	<div class="padding">
+		<div class="ui-input-label">Installation code:</div>
+		<ui-component name="codemirror" path="?.install" config="type:javascript;height:300;tabs:true;trim:true"></ui-component>
+		<div class="help m">The code will be executed when the configuration is changed or the component instance is initialized.</div>
+		<div class="ui-input-label">Uninstallation code:</div>
+		<ui-component name="codemirror" path="?.uninstall" config="type:javascript;height:300;tabs:true;trim:true"></ui-component>
+		<div class="help">The code above will be executed when the configuration is changed or the component instance is removed.</div>
+	</div>
+</settings>
+
+<body>
+	<ui-bind path="CONFIG" config="template" class="padding center block">
+		<script type="text/html">
+			<i class="ti-2x {{ value.icon }}"></i>
+			<div class="mt10 fs12">{{ value.name }}</div>
+			<div class="help npt nmt">Server extension</div>
+		</script>
+	</ui-bind>
+</body>

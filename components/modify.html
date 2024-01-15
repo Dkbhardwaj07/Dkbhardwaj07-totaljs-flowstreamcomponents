@@ -1,0 +1,315 @@
+<script total>
+
+	exports.id = 'modify';
+	exports.name = 'Modify';
+	exports.icon = 'ti ti-cog';
+	exports.group = 'Common';
+	exports.author = 'Total.js';
+	exports.version = '3';
+	exports.config = { rules: [] };
+	exports.inputs = [{ id: 'input', name: 'Input' }];
+	exports.outputs = [{ id: 'output', name: 'Output' }];
+
+	exports.make = function(instance, config) {
+
+		var Rules = [];
+
+		instance.message = function($) {
+
+			for (let i = 0; i < Rules.length; i++) {
+				try {
+					const { getValue, setValue } = Rules[i];
+
+					var data = getValue($.data, $.repo, instance.main.variables, instance.main.variables2, get);
+					setValue(data, $, instance, set);
+
+				} catch(e) {
+					instance.throw(e.stack);
+				}
+			}
+
+			$.send('output');
+		};
+
+		instance.configure = function() {
+
+			if (!config.rules || !config.rules.length)
+				return;
+
+			const rules = config.rules;
+			Rules = [];
+
+			rules.forEach(function eachCondition(cond, index){
+
+				const { rule, source, sourcepath, target, targetpath } = cond;
+				var getValue, setValue;
+
+				if (rule === 'remove') {
+
+					getValue = NOOP;
+					var is$ = target === 'data' || target === 'repo';
+					var base = (is$ ? '$.' : 'instance.main.') + target;
+
+					if (!targetpath) {
+						if (is$) // set $.data or $.repo to null
+							setValue = (d, $) => { $[target] = null; };
+						else // ignore variables or variables2
+							setValue = NOOP;
+					} else {
+						setValue = new Function('data', '$', 'instance', 'set', 'set({0}, {1}, null);'.format(base, sourcepath));
+					}
+
+					Rules.push({ getValue, setValue });
+					return;
+				}
+
+				if (rule === 'set' || rule === 'move') {
+
+					if (source === 'expression')
+						getValue = new Function('data', 'repo', 'variables', 'variables2', sourcepath.indexOf('return') > -1 ? sourcepath : 'return ' + sourcepath + ';');
+					else if (source === 'string')
+						getValue = () => sourcepath; // sourcepath is the actual string value
+					else if (source === 'number') {
+						getValue = () => Number(sourcepath);
+					} else {
+						try {
+							var str = 'if ({0}) return {1}; if (typeof {1} !== \'object\' || {1} == null) return; return {2};'.format(sourcepath ? 'false' : 'true', source, sourcepath ? 'get({0}, \'{1}\')'.format(source, sourcepath) : sourcepath);
+							getValue = new Function('data', 'repo', 'variables', 'variables2', 'get', str);
+						} catch(e) {
+							instance.throw(e.stack);
+							console.error(str);
+							getValue = NOOP;
+						};
+					}
+				}
+
+				var str;
+				var is$ = target === 'data' || target === 'repo';
+				var base = (is$ ? '$.' : 'instance.main.') + target;
+
+				// targetpath => data | repo | variables | variables2
+				if (!targetpath)
+					str = base + ' = data;';
+				else
+					str = 'if (typeof {0} !== \'object\' || {0} == null) {0} = {1}; set({0}, \'{2}\', data);'.format(base, isNaN(targetpath[0]) ? '{}' : '[]', targetpath);
+
+				if (rule === 'move' && sourcepath) {
+					var is$2 = source === 'data' || source === 'repo';
+					var base2 = (is$2 ? '$.' : 'instance.main.') + source;
+					// don't delete source if the target is within the same path: source $.data.device --> target $.data.device.data
+					if (base !== base2 || !targetpath.startsWith(sourcepath))
+						str += ' set({0}, \'{1}\', null);'.format(base2, sourcepath);
+				}
+
+				try {
+					setValue = new Function('data', '$', 'instance', 'set', str);
+				} catch(e) {
+					instance.throw(e.stack);
+					console.error(e);
+					console.error(str);
+					setValue = NOOP;
+				};
+				Rules.push({ getValue, setValue });
+			});
+		};
+
+		try {
+			instance.configure();
+		} catch (e) { console.error(e);}
+
+		const get = (obj, path) => path.split(".").reduce((r, k) => r?.[k], obj);
+		const set = (obj, path, value) => {
+			var ok = true;
+			var props = path.split('.').trim();
+
+			var plen = props.length;
+			if (!plen)
+				return false;
+
+			var path = props.map(p => isNaN(p) ? p : `[${p}]`).join('.').replace(/\.\[/g, '[');
+			var paths = [];
+			props.reduce((prev, curr) => {
+				curr = isNaN(curr) ? curr : `[${curr}]`;
+				let p = prev + (prev && curr[0] !== '[' ? '.' : '') + curr;
+				paths.push(p);
+				return p;
+			}, '');
+
+			if (path[0] !== '[')
+				path = '.' + path;
+			var fn = new Function('o', 'v', 'o' + path + ' = v;');
+
+			if (plen === 1) {
+				var isobject = isNaN(props[0]);
+				if ((isobject && typeof(obj) === 'object') || (!isobject && obj instanceof Array))
+					obj[props[0]] = value;
+				else
+					ok = false;
+			} else {
+				paths.forEach((p, index) => {
+					var islast = plen === index + 1;
+					if (!islast) {
+						var t = get(obj, p);
+						var type = isNaN(paths[index + 1]) ? '{}' : '[]';
+						if (t == null)
+							new Function('target', 'set', 'target' + (p[0] === '[' ? '' : '.') + p + ' = ' + type + ';')(obj, set);
+					} else {
+						fn(obj, value);
+					}
+				});
+			}
+
+			return ok;
+		}
+	};
+
+</script>
+
+<readme>
+This component allows you to set/modify/move/remove properties of the incomming data.
+For eaxample, to set the message data to a string `Hello world` select *Message data* in the rule dropdown and leave the text field empty.
+Then in the bellow dropdown select `string` and enter the desired string in the text field.
+
+__Result:__
+
+- before: $.data -> 'Hello world'
+- after:  $.data -> 'New string'
+
+## Expression
+
+Available params are: `data`, `repo`, `variables` ,`variables2`
+Where data is message.data, repo is message.repo --> [Documentation](https://docs.totaljs.com/total4/40844001ni51c)
+And variables are local variables which can be set in the Variables dialog accessible on the main toolbar(the button between Plus icon and Bug icon)
+For example, we want message data to be the value of (data.value + variables.offset)
+
+__Result:__
+
+- before: $.data --> `{ value: 100 }` / variables --> `{ offset: 20, ... many other properties }`
+- after:  $.data -> `{ value: 120 }`
+
+The expression: `data.value + variables.offset`
+
+### Important
+
+- `Remove` -> `Message data / Message repo` -> `<empty path>` will set `Message data / Message repo` to `null`;
+- `Remove` -> `Local variables / Global variables` -> `<empty path>` will be ignored but `Remove` -> `Local variables / Global variables` -> `myVar` will work.
+- `Set` -> `Message data` -> `some.path` to: `Message data` -> `some.other.path` will add another property to the incoming data and rest of the data will remain untouched
+- `Set` -> `Message data` -> `<empty path>` to: `Message data` -> `some.path` will essentialy overwrite the incomming data, after this there's no longer access to original data(same goes for repo)
+</readme>
+
+<settings>
+	<div class="padding">
+		<section class="modify-rules m">
+			<label>Rules</label>
+			<ui-bind path="?.rules" config="template:.modify-rule -> data-index" class="block"> 
+				<ui-component name="movable" path="?.rules" config="selector:.dragme;exec:FUNC.modify_rule_dragged">
+					<script type="text/html">
+						{{ foreach rule in value }}
+						<div class="modify-rule dragme" data-index="{{ $index }}" draggable="true">
+							<div class="row">
+								<div class="col-md-3">
+									<ui-component name="input" path="?.rules[{{ $index }}].rule" config="dirsource:REPO.modify_rules" class="m"></ui-component>
+								</div>
+								<div class="col-md-1">
+									<div class="m">--&gt;</div>
+									<ui-bind path="?.rules[{{ $index }}].rule" config="hide:value == 'remove'" class="block">to:</ui-bind>
+								</div>
+								<div class="col-md-7">
+									<div class="modify-input-group m">
+										<ui-component name="input" path="?.rules[{{ $index }}].target" config="dirsource:REPO.modify_targets"></ui-component>
+										<ui-component name="input" path="?.rules[{{ $index }}].targetpath" config="placeholder:value"></ui-component>
+									</div>
+									<ui-bind path="?.rules[{{ $index }}].rule" config="hide:value == 'remove'" class="modify-input-group block">
+										<ui-component name="input" path="?.rules[{{ $index }}].source" config="dirsource:REPO.modify_sources"></ui-component>
+										<ui-component name="input" path="?.rules[{{ $index }}].sourcepath" config="placeholder:value"></ui-component>
+									</ui-bind>
+								</div>
+								<div class="col-md-1">
+									<i class="ti ti-trash red exec" data-exec="FUNC.modify_remove_rule"></i>
+								</div>
+							</div>
+						</div>
+						{{ end }}
+					</script>
+				</ui-component>
+			</ui-bind>
+			<div class="help m">Each rule will be applied in the order from top to bottom.</div>
+			<button class="button-add exec" data-exec="FUNC.modify_add_rule">ADD</button>
+		</section>
+		<button class="button exec" style="width: 200px;" data-exec="FUNC.modify_readme"><i class="ti ti-info-circle blue"></i>Show configuration info</button>
+	</div>
+</settings>
+
+<script>
+
+	FUNC.modify_readme = function() {
+		EXEC('flow/readme', flow.info.selected.component);
+	};
+
+	FUNC.modify_add_rule = function(el) {
+		var scope = el.scope();
+		PUSH(scope.path + '.rules', { rule: 'set', source: '', sourcetype: '', target: '', targettype: '' });
+	};
+
+	FUNC.modify_remove_rule = function(el) {
+		var path = el.scope().path;
+		var config = GET(path);
+		var index = el.closest('.modify_rule').attrd('index');
+		config.rules.splice(index, 1);
+		SET(path, config);
+	};
+
+	FUNC.modify_rule_dragged = function(list, dragged, target) {
+		dragged = $(dragged);
+		var dragged_index = dragged.attrd('index');
+		var target_index = $(target).attrd('index');
+		var path = dragged.scope().path;
+		var config = GET(path);
+		var dragged_item = config.rules.splice(dragged_index, 1)[0];
+		config.rules.splice(target_index, 0, dragged_item);
+		SET(path, config);
+	};
+
+	FUNC.modify_tooltip = function(el) {
+		var opt = {};
+		opt.element = el;
+		var id = el.attrd('id');
+		opt.html = REPO.switch_tooltips[id];
+
+		SETTER('tooltip', 'show', opt);
+	};
+
+	REPO.modify_sources = 'string|String,number|Number,data|Message data,repo|Message repository,variables|Local variables,variables2|Global variables,expression|Expression'.split(',').map(d => { const [ id, name ] = d.split('|'); return { id, name }; });
+	REPO.modify_targets = 'data|Message data,repo|Message repository,variables|Local variables,variables2|Global variables'.split(',').map(d => { const [ id, name ] = d.split('|'); return { id, name }; });
+	REPO.modify_rules = 'set|Set,remove|Remove,move|Move'.split(',').map(d => { const [ id, name ] = d.split('|'); return { id, name }; });
+</script>
+
+<style>
+	.CLASS footer { padding: 10px; font-size: 12px; }
+
+	.button-add { height: 24px; font-size: 12px; border: 1px solid #E0E0E0; border-radius: var(--radius); color: #000; background-color: #f0f0f0; margin: 0; padding: 2px 10px; }
+	.button-add:hover { background-color: #F8F8F8; }
+	.button-add:active { background-color: #E0E0E0; }
+
+	.ui-dark .button-add { border-color: #404040; color: #FFF; }
+	.ui-dark .button-add:hover { background-color: #303030; }
+	.ui-dark .button-add:active { background-color: #404040; }
+
+	.modify-input-group { clear: both; height: 36px; }
+	.modify-input-group > ui-component:first-child .ui-input-control { border-right: none; border-bottom-right-radius: 0; border-top-right-radius: 0; width: 120px; float: left; background-color: #f0f0f0; }
+	.modify-input-group > ui-component:last-child .ui-input-control { border-bottom-left-radius: 0; border-top-left-radius: 0; float: left; width: calc(100% - 120px); }
+	.modify-input-group.wide > ui-component:first-child .ui-input-control { width: 200px; }
+	.modify-input-group.wide > ui-component:last-child .ui-input-control { width: calc(100% - 200px); }
+	.modify-rules { border: 1px solid #e0e0e0; padding: 8px; border-radius: 3px; }
+	.modify-rule { border: 1px solid #e0e0e0; border-radius: 3px; padding: 8px; margin-bottom:4px; }
+	.modify-rule > .row > .col-md-1 { height: 36px; line-height: 36px; }
+	.modify-help { background-color: #e7e7ff; border-radius: 3px; padding: 4px; }
+	.modify-thead { padding: 8px; margin-bottom:4px; }
+	.modify-rules > label { display: block; background-color: #f0f0f0; margin: -8px -8px 8px; padding: 8px; border-bottom: 1px solid #e0e0e0; }
+</style>
+
+<body>
+	<header>
+		<i class="ICON"></i>NAME
+	</header>
+</body>

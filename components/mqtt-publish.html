@@ -1,0 +1,102 @@
+<script total>
+
+	exports.id = 'mqttpublish';
+	exports.name = 'MQTT Publish';
+	exports.icon = 'ti ti-sign-out';
+	exports.group = 'MQTT';
+	exports.config = { broker: '' };
+	exports.inputs = [{ id: 'message', name: 'Message' }];
+	exports.author = 'Martin Smola';
+	exports.version = '3';
+	exports.flags = ['mqttbroker-dep'];
+
+	exports.make = function(instance, config) {
+
+		instance.configure = function() {
+			var broker = instance.main.find(config.broker);
+			if (!broker)
+				instance.status('Broker not found');
+			else
+				instance.status(broker.state.status);
+		};
+
+		instance.message = function($) {
+			var broker = instance.main.find(config.broker);
+			if (!broker) {
+				$.destroy();
+				return;
+			}
+
+			broker.publish($.data.topic, $.data.message);
+			$.destroy();
+		};
+
+		instance.configure();
+	};
+
+	exports.call = function(data, answer) {
+		var arr = [];
+
+		var instances = this.instances();
+
+		instances = instances.filter(i => i.module.flags && i.module.flags.includes('mqttbroker'));
+		for (let com of instances)
+			arr.push({ id: com.id, name: `${com.state.name} (${com.state.status})` });
+
+		answer(arr);
+	};
+</script>
+
+<readme>
+MQTT Publish
+
+Input:
+```javascript
+{
+	topic: 'some/topic',
+	message: { some: 'data' },
+	// optional
+	options: {
+		qos: 0|1|2,
+		retain: true|false
+	}
+}
+```
+</readme>
+
+<style>
+	.CLASS footer { padding: 10px; font-size: 11px; }
+	.CLASS footer > ui-bind > div { height: 16px; }
+	.CLASS footer b { float: right; }
+</style>
+
+<script>
+	ON('configure_mqttpublish', function(data) {
+		data.call(function(response) {
+			SET('%brokers', response);
+		}, true);
+	});
+</script>
+
+<settings>
+	<div class="padding">
+		<div class="row">
+			<div class="col-md-6">
+				<ui-component name="input" path="?.broker" config="dirsource:%brokers;dirraw:1;placeholder:Select broker;dirempty:No broker;required:1" class="m"><b>Broker</b></ui-component>
+			</div>
+		</div>
+	</div>
+</settings>
+
+<body>
+	<header>
+		<i class="ICON"></i>NAME
+	</header>
+	<footer>
+		<ui-bind path="!STATUS" config="template;show" class="block">
+			<script type="text/html">
+				<div><b>{{ value }}</b>Status</div>
+			</script>
+		</ui-bind>
+	</footer>
+</body>

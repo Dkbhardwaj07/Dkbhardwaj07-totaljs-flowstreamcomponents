@@ -1,0 +1,102 @@
+<script total>
+
+	exports.id = 'merge';
+	exports.name = 'Merge';
+	exports.icon = 'ti ti-cashregister';
+	exports.author = 'Total.js';
+	exports.version = '1';
+	exports.group = 'Common';
+	exports.config = { limit: 0, timeout: 2000 };
+	exports.inputs = [{ id: 'input', name: 'Input' }];
+	exports.outputs = [{ id: 'output', name: 'Output' }];
+
+	exports.make = function(instance, config) {
+
+		var queue = [];
+		var refs = {};
+		var timeout = null;
+		var status = { count: 0 }
+
+		var flush = function() {
+
+			if (timeout) {
+				clearTimeout(timeout);
+				timeout = null;
+			}
+
+			var msg = instance.newmessage(queue);
+
+			for (var key in refs)
+				msg.refs[key] = refs[key];
+
+			queue = [];
+			status.count = 0;
+			instance.status(status, 500);
+			msg.send('output');
+		};
+
+		instance.message = function($) {
+
+			var data = $.data;
+
+			for (var key in $.refs)
+				refs[key] = $.refs[key];
+
+			queue.push(data);
+
+			if (config.limit && queue.length === config.limit)
+				flush();
+			else if (config.timeout && !timeout)
+				timeout = setTimeout(flush, config.timeout);
+
+			$.destroy();
+
+			status.count = queue.length;
+			instance.status(status, 500);
+		};
+
+		instance.close = function() {
+
+			if (timeout) {
+				clearTimeout(timeout);
+				timeout = null;
+			}
+
+			queue = null;
+		};
+
+	};
+
+</script>
+
+<readme>
+The component merges incoming data into an array.
+</readme>
+
+<settings>
+	<div class="padding">
+		<div class="grid-4">
+			<div class="m">
+				<ui-component name="input" path="?.limit" config="type:number">Limit</ui-component>
+				<div class="help"><code>0</code> means disabled</div>
+			</div>
+			<div class="m">
+				<ui-component name="input" path="?.timeout" config="type:number">Timeout</ui-component>
+				<div class="help">In milliseconds. <code>0</code> means disabled</div>
+			</div>
+		</div>
+	</div>
+</settings>
+
+<style>
+	.CLASS footer { padding: 10px; font-size: 12px; }
+</style>
+
+<body>
+	<header>
+		<i class="$ICON"></i>$NAME
+	</header>
+	<footer>
+		Pending: <ui-bind path="STATUS" config="text:value?value.count:0" class="b"></ui-bind>
+	</footer>
+</body>

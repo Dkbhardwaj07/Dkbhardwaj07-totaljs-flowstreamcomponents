@@ -1,0 +1,29 @@
+<script total>
+
+	exports.id = 'end';
+	exports.name = 'End';
+	exports.group = 'Common';
+	exports.version = '1';
+	exports.icon = 'ti ti-ban';
+	exports.author = 'Total.js';
+	exports.config = {};
+	exports.inputs = [{ id: 'input', name: 'Input' }];
+	exports.kind = 'output';
+
+	exports.make = function(instance) {
+		instance.message = function($) {
+			$.destroy();
+		};
+	};
+
+</script>
+
+<readme>
+The component destroys the incoming message.
+</readme>
+
+<body>
+	<header>
+		<i class="ICON"></i>NAME
+	</header>
+</body>

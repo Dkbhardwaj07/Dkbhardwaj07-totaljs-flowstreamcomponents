@@ -1,0 +1,39 @@
+<script total>
+
+	exports.id = 'output';
+	exports.name = 'Output';
+	exports.group = 'FlowStream';
+	exports.version = '2';
+	exports.icon = 'ti ti-crosshairs';
+	exports.author = 'Total.js';
+	exports.config = { name: 'Output', readme: '' };
+	exports.inputs = [{ id: 'data', name: 'Data' }];
+	exports.type = 'output';
+	exports.kind = 'output';
+
+	exports.make = function(instance, config) {
+		instance.message = function($) {
+			instance.output($.data, null, null, $.refs.reference);
+			$.destroy();
+		};
+	};
+
+</script>
+
+<settings>
+	<div class="padding">
+		<ui-component name="input" path="?.name" config="required:1" class="m"><b>Output name</b></ui-component>
+		<ui-component name="textarea" path="?.readme" config="monospace:1;height:250">Readme</ui-component>
+		<div class="help">Supports markdown format</div>
+	</div>
+</settings>
+
+<readme>
+The component can send data from an encapsulated FlowStream.
+</readme>
+
+<body>
+	<header>
+		<i class="ICON"></i>Output: <ui-bind path="CONFIG.name" config="text;empty" class="b"></ui-bind>
+	</header>
+</body>
